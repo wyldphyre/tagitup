@@ -361,7 +361,9 @@ class TagitUpProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
 		if (fileItems.length === 0) {
 			return [new vscode.TreeItem('(No files with this tag)')];
 		} else {
-			return fileItems;
+			return fileItems.sort((a, b) =>
+				(a.label as string).localeCompare(b.label as string)
+			);
 		}
 	}
 

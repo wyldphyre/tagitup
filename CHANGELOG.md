@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.2] - 2026-04-18
+
+This release is from the [wyldphyre fork](https://github.com/Udayk02/tagitup) of the original TagitUp extension.
+
+### Added
+
+*   **File-based tag storage** — tags are now persisted to `.vscode/tagitup.json` in the workspace folder instead of VS Code's internal `workspaceState`. Tags travel with the project and can be committed to source control.
+
+### Fixed
+
+*   Files with spaces in their names now display correctly in the tag panel instead of showing percent-encoded characters (e.g. `my file.ts` instead of `my%20file.ts`).
+*   Files listed under a tag in the panel are now sorted alphabetically by filename.
+
+---
+
 ## [0.0.1] - 2025-04-06
 
 ### Added
