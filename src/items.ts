@@ -5,7 +5,7 @@ import * as path from 'path';
  * A class that represents "Active File Tags" item in the tree view
  */
 export class ActiveFileTagsItem extends vscode.TreeItem {
-	constructor(label: string, private workspaceState: vscode.Memento) {
+	constructor(label: string) {
 		super(label, vscode.TreeItemCollapsibleState.Collapsed);
 	}
 }
@@ -15,8 +15,7 @@ export class ActiveFileTagsItem extends vscode.TreeItem {
  */
 export class ActiveFileTagItem extends vscode.TreeItem {
 	constructor(
-		public readonly tagName: string, // store the tag name
-		private workspaceState: vscode.Memento
+		public readonly tagName: string // store the tag name
 	) {
 		super("", vscode.TreeItemCollapsibleState.None); // make it a non-collapsible item
 		this.contextValue = 'activeFileTagItem';
@@ -35,7 +34,7 @@ export class ActiveFileTagItem extends vscode.TreeItem {
  * TreeItem for a tag/category in the "Tags" section.
  */
 export class TagCategoryItem extends vscode.TreeItem {
-	constructor(public readonly tagName: string, private workspaceState: vscode.Memento) {
+	constructor(public readonly tagName: string) {
 		super(tagName, vscode.TreeItemCollapsibleState.Collapsed);
 		this.contextValue = "tag";
 	}

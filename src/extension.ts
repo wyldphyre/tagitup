@@ -1,14 +1,17 @@
 import * as vscode from 'vscode';
 import {  ActiveFileTagsItem, ActiveFileTagItem, TagCategoryItem, TaggedFileItem, FileQuickPickItem } from './items';
 import { parseTagQuery, TagExpression } from './tagexpression';
+import { FileTagStore } from './tagstore';
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
 
 	console.log('Congratulations, your extension "TagitUp" is now active!');
 
-	const workspaceState = context.workspaceState;	// workspace state (kind of like a storage)
+	// Load tag data from .vscode/tagitup.json in the workspace folder
+	const tagStore = new FileTagStore();
+	await tagStore.load();
 
-	const tagitupProvider = new TagitUpProvider(workspaceState);
+	const tagitupProvider = new TagitUpProvider(tagStore);
 	// register the data provider
 	vscode.window.registerTreeDataProvider('tagitupTreeView', tagitupProvider);
 	// refresh the data provider so that tree view also gets refreshed
@@ -23,11 +26,11 @@ export function activate(context: vscode.ExtensionContext) {
 			const oldFileUriString = renamedFile.oldUri.toString();
 			const newFileUriString = renamedFile.newUri.toString();
 
-			const tags = getFileTags(oldFileUriString, workspaceState); // get tags from old URI
+			const tags = getFileTags(oldFileUriString, tagStore); // get tags from old URI
 			if (tags && tags.length > 0) {
-				const success = await setFileTags(newFileUriString, tags, workspaceState);
+				const success = await setFileTags(newFileUriString, tags, tagStore);
 				if (success) {
-					clearFileTags(oldFileUriString, workspaceState);      // remove tags from old URI
+					clearFileTags(oldFileUriString, tagStore);      // remove tags from old URI
 					tagitupProvider.refresh(); // refresh tree view to update file paths
 				}    // set tags for new URI
 			}
@@ -38,7 +41,7 @@ export function activate(context: vscode.ExtensionContext) {
 	vscode.workspace.onDidDeleteFiles(event => {
 		event.files.forEach(deletedFile => {
 			const deletedFileUriString = deletedFile.toString();
-			clearFileTags(deletedFileUriString, workspaceState); // remove tags for the deleted file
+			clearFileTags(deletedFileUriString, tagStore); // remove tags for the deleted file
 		});
 		tagitupProvider.refresh(); // refresh tree view to update file paths
 	});
@@ -67,17 +70,17 @@ export function activate(context: vscode.ExtensionContext) {
 		const tagsInput = await vscode.window.showInputBox({
 			prompt: `Enter tags (comma-separated, no space allowed)`,
 			placeHolder: `e.g., #stack, #heap`,
-			value: getFileTags(filePath, workspaceState).join(", ")	// pre fill the input box with existing tags
+			value: getFileTags(filePath, tagStore).join(", ")	// pre fill the input box with existing tags
 		});
-		
+
 		if (tagsInput) {
 			const tags = tagsInput.split(",").map(tag => tag.trim()).filter(tag => tag.length > 0);
 			// store the tags into the workspace
-			const success = await setFileTags(filePath, tags, workspaceState); 
+			const success = await setFileTags(filePath, tags, tagStore);
 			if (success) {
 				vscode.window.showInformationMessage(`Tags added to the current file.`);
 				tagitupProvider.refresh();	// refresh
-			}			
+			}
 		} else {
 			vscode.window.showInformationMessage(`Tagging cancelled.`);
 		}
@@ -92,12 +95,10 @@ export function activate(context: vscode.ExtensionContext) {
 		);
 
 		if (confirmation === 'Yes') {
-			// get all keys from workspaceState
-			const keys = workspaceState.keys();
-
-			// clear each key
+			// get all keys from tagStore and clear each one
+			const keys = [...tagStore.keys()];
 			for (const key of keys) {
-				await workspaceState.update(key, undefined);
+				await tagStore.update(key, undefined);
 			}
 
 			vscode.window.showInformationMessage('TagitUp workspace cleared.');
@@ -120,7 +121,7 @@ export function activate(context: vscode.ExtensionContext) {
 			return; // No active editor
 		}
 		const fileUriString = editor.document.uri.toString();
-		const currentTags = getFileTags(fileUriString, workspaceState);
+		const currentTags = getFileTags(fileUriString, tagStore);
 
 		if (currentTags.length === 0) {
 			vscode.window.showInformationMessage(`Active file has no tags to remove.`);
@@ -128,7 +129,7 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 
 		const updatedTags = currentTags.filter(tag => tag !== tagToRemove); // Remove the specific tag
-		const success = await setFileTags(fileUriString, updatedTags, workspaceState); 
+		const success = await setFileTags(fileUriString, updatedTags, tagStore);
 		if (success) {
 			vscode.window.showInformationMessage(`Tag "${tagToRemove}" removed from the active file.`);
 			tagitupProvider.refresh(); // Refresh the tree view
@@ -154,10 +155,10 @@ export function activate(context: vscode.ExtensionContext) {
 			return;
 		}
 
-		// iterate over all files (keys from workspaceState) and filter
+		// iterate over all files (keys from tagStore) and filter
 		const matchedItems: FileQuickPickItem[] = [];
-		for (const fileUriString of workspaceState.keys()) {
-			const fileTags = getFileTags(fileUriString, workspaceState);
+		for (const fileUriString of tagStore.keys()) {
+			const fileTags = getFileTags(fileUriString, tagStore);
 			// check if any search tag exists in the file's tag list.
 			// const hasAny = searchTags.some(searchTag => fileTags.includes(searchTag));
 			if (queryExpression(fileTags)) {
@@ -197,11 +198,11 @@ export function activate(context: vscode.ExtensionContext) {
 /**
  * Gets the tags associated with a given file
  * @param filePath The absolute path of the current file
- * @param workspaceState VSCode's workspace state memento
+ * @param tagStore The tag store instance
  * @returns An array of tags associated with the file
  */
-function getFileTags(filePath: string, workspaceState: vscode.Memento): string[] {
-	const tags = workspaceState.get<string[]>(filePath);
+function getFileTags(filePath: string, tagStore: vscode.Memento): string[] {
+	const tags = tagStore.get<string[]>(filePath);
 	return tags || [];	// return empty array if no tags are found
 }
 
@@ -209,10 +210,10 @@ function getFileTags(filePath: string, workspaceState: vscode.Memento): string[]
  * Sets tags to a given file
  * @param filePath The absolute path of the current file
  * @param tags The tags to be added to the file
- * @param workspaceState VSCode's workspace state memento
+ * @param tagStore The tag store instance
  * @returns boolean value stating whether the tags are set or not
  */
-async function setFileTags(filePath: string, tags: string[], workspaceState: vscode.Memento): Promise<boolean> {
+async function setFileTags(filePath: string, tags: string[], tagStore: vscode.Memento): Promise<boolean> {
 	// check for spaces in tags
 	const invalidTags = tags.filter(tag => /\s/.test(tag));
 	if (invalidTags.length > 0) {
@@ -221,7 +222,7 @@ async function setFileTags(filePath: string, tags: string[], workspaceState: vsc
 	}
 	const uniqueTags = [...new Set(tags)];
 	try {
-		await workspaceState.update(filePath, uniqueTags);
+		await tagStore.update(filePath, uniqueTags);
 		return true;
 	}
 	catch(reason) {
@@ -231,21 +232,21 @@ async function setFileTags(filePath: string, tags: string[], workspaceState: vsc
 }
 
 /**
- * Clears tags associated with a given file (removes from workspaceState)
+ * Clears tags associated with a given file
  * @param filePath The absolute path of the current file (URI string)
- * @param workspaceState VSCode's workspace state memento
+ * @param tagStore The tag store instance
  */
-function clearFileTags(filePath: string, workspaceState: vscode.Memento) {
-	workspaceState.update(filePath, undefined); // Set value to undefined to remove
+function clearFileTags(filePath: string, tagStore: vscode.Memento) {
+	tagStore.update(filePath, undefined); // Set value to undefined to remove
 }
 
 /**
- * Cleans up the workspace state by removing entries for files that no longer exist.
+ * Cleans up the tag store by removing entries for files that no longer exist.
  * This is useful to handle files deleted outside of VS Code.
- * @param workspaceState VSCode's workspace state memento
+ * @param tagStore The tag store instance
  */
-async function cleanupWorkspaceState(workspaceState: vscode.Memento): Promise<void> {
-	const allFilePaths = workspaceState.keys();	// get all the keys (file paths)
+async function cleanupDeletedFiles(tagStore: vscode.Memento): Promise<void> {
+	const allFilePaths = tagStore.keys();	// get all the keys (file paths)
 
 	for (const fileUriString of allFilePaths) {
 		try {
@@ -253,8 +254,8 @@ async function cleanupWorkspaceState(workspaceState: vscode.Memento): Promise<vo
 			await vscode.workspace.fs.stat(fileUri); // check if file exists. stat will throw error if not exist
 		} catch (error: any) {
 			if (error.code === 'FileNotFound' || error.code === 'ENOENT') {
-				// File not found, remove from workspace state
-				await workspaceState.update(fileUriString, undefined);
+				// File not found, remove from tag store
+				await tagStore.update(fileUriString, undefined);
 			}
 		}
 	}
@@ -267,7 +268,7 @@ class TagitUpProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
 	private _onDidChangeTreeData: vscode.EventEmitter<vscode.TreeItem | undefined | null | void> = new vscode.EventEmitter<vscode.TreeItem | undefined | null | void>();
 	readonly onDidChangeTreeData: vscode.Event<vscode.TreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
 
-	constructor(private workspaceState: vscode.Memento) { }
+	constructor(private tagStore: vscode.Memento) { }
 
 	getTreeItem(element: vscode.TreeItem): vscode.TreeItem | Thenable<vscode.TreeItem> {
 		return element;
@@ -276,13 +277,13 @@ class TagitUpProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
 	getChildren(element?: vscode.TreeItem): Thenable<vscode.TreeItem[]> {
 		if (element instanceof ActiveFileTagsItem) {
 			// if an element is selected in the tree, show the children
-			return Promise.resolve(this.getActiveFileTagItems(this.workspaceState));
+			return Promise.resolve(this.getActiveFileTagItems(this.tagStore));
 		} else if (element && element.label === "Tags") {
 			// list out all the tags under the "Tags" section
-			return Promise.resolve(this.getTagCategoryItems(this.workspaceState));
+			return Promise.resolve(this.getTagCategoryItems(this.tagStore));
 		} else if (element instanceof TagCategoryItem) {
 			// handle children for a TagCategoryItem (list files under this tag)
-			return Promise.resolve(this.getFilesForTagItems(element.tagName, this.workspaceState));
+			return Promise.resolve(this.getFilesForTagItems(element.tagName, this.tagStore));
 		} else if (element) {
 			return Promise.resolve([]);
 		} else {
@@ -293,36 +294,36 @@ class TagitUpProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
 
 	/**
 	 * Get the tags of the current active text editor/file
-	 * @param workspaceState VSCode's workspace state memento
-	 * @returns List of tags of the active text edtior/file
+	 * @param tagStore The tag store instance
+	 * @returns List of tags of the active text editor/file
 	 */
-	private getActiveFileTagItems(workspaceState: vscode.Memento): vscode.TreeItem[] {
+	private getActiveFileTagItems(tagStore: vscode.Memento): vscode.TreeItem[] {
 		const editor = vscode.window.activeTextEditor;
 		if (!editor) {
 			return [];	// no active file
 		}
 
 		const fileUri = editor.document.uri.toString();
-		const tags = getFileTags(fileUri, workspaceState);
+		const tags = getFileTags(fileUri, tagStore);
 
 		if (tags.length === 0) {
 			return [new vscode.TreeItem("No tags found")];		// show the no tags message
 		} else {
-			return tags.map(tag => new ActiveFileTagItem(tag, workspaceState));	// show the tags
+			return tags.map(tag => new ActiveFileTagItem(tag));	// show the tags
 		}
 	}
 
 	/**
-	 * Get all tag/category by getting each item 
-	 * @param workspaceState VSCode's workspace state memento
-	 * @returns 
+	 * Get all tag/category items
+	 * @param tagStore The tag store instance
+	 * @returns List of tag category tree items
 	 */
-	private getTagCategoryItems(workspaceState: vscode.Memento): vscode.TreeItem[] {
-		const allFilePaths = workspaceState.keys();	// get all the keys (file paths)
+	private getTagCategoryItems(tagStore: vscode.Memento): vscode.TreeItem[] {
+		const allFilePaths = tagStore.keys();	// get all the keys (file paths)
 		const uniqueTags = new Set<string>();
 
 		for (const fileUri of allFilePaths) {
-			const tagsForFile = getFileTags(fileUri, workspaceState);
+			const tagsForFile = getFileTags(fileUri, tagStore);
 			tagsForFile.forEach(tag => uniqueTags.add(tag));	// getting all the distinct tags
 		}
 
@@ -332,7 +333,7 @@ class TagitUpProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
 			// returning a list of tagItems
 			return Array.from(uniqueTags).map(tag => {
 				// create TagCategoryItem instance for each tag
-				return new TagCategoryItem(tag, workspaceState);
+				return new TagCategoryItem(tag);
 			});
 		}
 	}
@@ -340,17 +341,17 @@ class TagitUpProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
 	/**
 	 * Get all the files for a specific tag
 	 * @param tag A tag for which files have to be retrieved
-	 * @param workspaceState VSCode's workspace state memento
+	 * @param tagStore The tag store instance
 	 * @returns List of files for the current tag
 	 */
-	private getFilesForTagItems(tag: string, workspaceState: vscode.Memento): vscode.TreeItem[] {
-		const allFilePaths = workspaceState.keys();
+	private getFilesForTagItems(tag: string, tagStore: vscode.Memento): vscode.TreeItem[] {
+		const allFilePaths = tagStore.keys();
 		const fileItems: vscode.TreeItem[] = [];
 
 		for (const fileUri of allFilePaths) {
-			const tagsForFile = getFileTags(fileUri, workspaceState);
+			const tagsForFile = getFileTags(fileUri, tagStore);
 			if (tagsForFile.includes(tag)) {
-				const relativePath = vscode.workspace.asRelativePath(fileUri);
+				const relativePath = vscode.workspace.asRelativePath(vscode.Uri.parse(fileUri));
 				// create TaggedFileItem instance
 				const fileItem = new TaggedFileItem(fileUri, relativePath);
 				fileItems.push(fileItem);
@@ -372,7 +373,7 @@ class TagitUpProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
 		const items: vscode.TreeItem[] = [];
 
 		// 1. "Active File Tags" item where all the tags associate with the current file are listed
-		const activeFileTagsItem = new ActiveFileTagsItem("Active File Tags", this.workspaceState);
+		const activeFileTagsItem = new ActiveFileTagsItem("Active File Tags");
 		activeFileTagsItem.description = "Tags for the current file";
 		activeFileTagsItem.collapsibleState = vscode.TreeItemCollapsibleState.Collapsed; // expandable
 		items.push(activeFileTagsItem);
@@ -392,7 +393,7 @@ class TagitUpProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
 	 * @param elementToRefresh (Optional) The element to refresh. If undefined, refreshes the entire tree.
 	 */
 	public refresh(elementToRefresh?: vscode.TreeItem): void {
-		cleanupWorkspaceState(this.workspaceState).then(() => { // call cleanup before refreshing the tree
+		cleanupDeletedFiles(this.tagStore).then(() => { // call cleanup before refreshing the tree
 			this._onDidChangeTreeData.fire(elementToRefresh);
 		});
 	}

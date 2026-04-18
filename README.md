@@ -1,5 +1,10 @@
 # TagitUp
 
+> **Fork notice:** This is a fork of [TagitUp by uk02](https://github.com/Udayk02/tagitup), maintained by Craig (wyldphyre). The following changes have been made from the original:
+>
+> - **File-based tag storage** — tags are now stored in `.vscode/tagitup.json` inside the workspace folder instead of VS Code's internal `workspaceState`. This means the tag database travels with the project and can be committed to source control.
+> - **Fixed `%20` in filenames** — files with spaces in their names now display correctly in the tag panel rather than showing percent-encoded characters.
+
 A simple VS Code extension for tagging files within your workspace and easily searching for them. Keep your files organized by assigning relevant tags to your files.
 I did this mainly to tag leetcode problems so that I can categorize them and come back to them based on the topics that are associated with the problem.
 
@@ -22,7 +27,7 @@ Note: There are a bunch of features that I can do further. Will do when time per
     *   Browse all unique tags used in the workspace (in the current workspace only).
     *   List all files associated with a specific tag.
 *   **Search:** Find files using tag expressions (& - AND, | - OR, () - grouping. See, dummy, you can't use commas here).
-*   **Persistence:** Tags are saved within your VS Code workspace state, persisting across sessions for that workspace (NBD, everything is handled by VS Code).
+*   **Persistence:** Tags are saved to `.vscode/tagitup.json` in your workspace folder, so they travel with the project and can be committed to source control.
 *   **File Management:** Automatically handles tag migration on file rename and cleanup on file deletion (within VS Code. Outside VS Code, you can hit refresh.).
 
 ## Usage
