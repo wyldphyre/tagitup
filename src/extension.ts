@@ -67,22 +67,19 @@ export async function activate(context: vscode.ExtensionContext) {
 		}
 
 		const filePath = editor.document.uri.toString();	// uri is the vscode's representation for a resource
-		const tagsInput = await vscode.window.showInputBox({
-			prompt: `Enter tags (comma-separated, no space allowed)`,
-			placeHolder: `e.g., #stack, #heap`,
-			value: getFileTags(filePath, tagStore).join(", ")	// pre fill the input box with existing tags
-		});
+		const currentTags = getFileTags(filePath, tagStore);
+		const allTags = getAllTags(tagStore);
+		const selectedTags = await pickTags(currentTags, allTags);
 
-		if (tagsInput) {
-			const tags = tagsInput.split(",").map(tag => tag.trim()).filter(tag => tag.length > 0);
-			// store the tags into the workspace
-			const success = await setFileTags(filePath, tags, tagStore);
-			if (success) {
-				vscode.window.showInformationMessage(`Tags added to the current file.`);
-				tagitupProvider.refresh();	// refresh
-			}
-		} else {
+		if (selectedTags === undefined) {
 			vscode.window.showInformationMessage(`Tagging cancelled.`);
+			return;
+		}
+
+		const success = await setFileTags(filePath, selectedTags, tagStore);
+		if (success) {
+			vscode.window.showInformationMessage(`Tags updated for the current file.`);
+			tagitupProvider.refresh();
 		}
 	});
 
@@ -201,6 +198,61 @@ export async function activate(context: vscode.ExtensionContext) {
  * @param tagStore The tag store instance
  * @returns An array of tags associated with the file
  */
+function getAllTags(tagStore: vscode.Memento): string[] {
+	const unique = new Set<string>();
+	for (const fileUri of tagStore.keys()) {
+		getFileTags(fileUri, tagStore).forEach(tag => unique.add(tag));
+	}
+	return Array.from(unique).sort();
+}
+
+async function pickTags(currentTags: string[], allTags: string[]): Promise<string[] | undefined> {
+	return new Promise(resolve => {
+		const qp = vscode.window.createQuickPick();
+		qp.canSelectMany = true;
+		qp.placeholder = 'Select tags or type a new one';
+
+		let selectedLabels = new Set(currentTags);
+		let accepted = false;
+
+		const buildItems = (filter: string): vscode.QuickPickItem[] => {
+			const items: vscode.QuickPickItem[] = allTags.map((tag: string) => ({ label: tag }));
+			if (filter && !allTags.includes(filter)) {
+				items.unshift({ label: filter, description: 'new tag' });
+			}
+			return items;
+		};
+
+		qp.items = buildItems('');
+		qp.selectedItems = qp.items.filter((item: vscode.QuickPickItem) => selectedLabels.has(item.label));
+
+		qp.onDidChangeSelection((items: readonly vscode.QuickPickItem[]) => {
+			selectedLabels = new Set(items.map((item: vscode.QuickPickItem) => item.label));
+		});
+
+		qp.onDidChangeValue((value: string) => {
+			const trimmed = value.trim();
+			qp.items = buildItems(trimmed);
+			qp.selectedItems = qp.items.filter((item: vscode.QuickPickItem) => selectedLabels.has(item.label));
+		});
+
+		qp.onDidAccept(() => {
+			accepted = true;
+			qp.hide();
+			resolve([...selectedLabels]);
+		});
+
+		qp.onDidHide(() => {
+			qp.dispose();
+			if (!accepted) {
+				resolve(undefined);
+			}
+		});
+
+		qp.show();
+	});
+}
+
 function getFileTags(filePath: string, tagStore: vscode.Memento): string[] {
 	const tags = tagStore.get<string[]>(filePath);
 	return tags || [];	// return empty array if no tags are found
