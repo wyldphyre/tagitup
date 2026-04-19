@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.4] - 2026-04-19
+
+### Changed
+
+*   **Portable tag storage** — tags are now stored using paths relative to the workspace root instead of absolute URIs. Moving or renaming the workspace folder no longer breaks existing tags. Existing tag databases with absolute-URI keys are migrated automatically on first load.
+
+---
+
 ## [0.0.3] - 2026-04-19
 
 ### Changed

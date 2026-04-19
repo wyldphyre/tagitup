@@ -41,31 +41,71 @@ export class FileTagStore implements vscode.Memento {
             // File does not exist yet, or is unreadable — start with an empty store.
             this.data = {};
         }
+
+        // Migrate any legacy absolute-URI keys to relative paths.
+        const migrated: Record<string, string[]> = {};
+        let needsMigration = false;
+        for (const [key, value] of Object.entries(this.data)) {
+            if (key.includes('://')) {
+                needsMigration = true;
+                migrated[this.toRelativeKey(key)] = value;
+            } else {
+                migrated[key] = value;
+            }
+        }
+        if (needsMigration) {
+            this.data = migrated;
+            await this.persist();
+        }
     }
 
     // ── vscode.Memento interface ─────────────────────────────────────────────
 
+    // Keys are stored internally as relative paths but exposed as absolute URI
+    // strings so callers don't need to change.
     keys(): readonly string[] {
-        return Object.keys(this.data);
+        return Object.keys(this.data).map(rel => this.toAbsoluteUri(rel));
     }
 
     get<T>(key: string): T | undefined;
     get<T>(key: string, defaultValue: T): T;
     get<T>(key: string, defaultValue?: T): T | undefined {
-        const value = this.data[key] as unknown as T | undefined;
+        const value = this.data[this.toRelativeKey(key)] as unknown as T | undefined;
         return value !== undefined ? value : defaultValue;
     }
 
     async update(key: string, value: any): Promise<void> {
+        const rel = this.toRelativeKey(key);
         if (value === undefined || value === null) {
-            delete this.data[key];
+            delete this.data[rel];
         } else {
-            this.data[key] = value;
+            this.data[rel] = value;
         }
         await this.persist();
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
+
+    private toRelativeKey(absUriString: string): string {
+        const folders = vscode.workspace.workspaceFolders;
+        if (!folders || folders.length === 0) { return absUriString; }
+        try {
+            const fileUri = vscode.Uri.parse(absUriString);
+            const workspaceUri = folders[0].uri;
+            if (fileUri.scheme === workspaceUri.scheme &&
+                fileUri.path.startsWith(workspaceUri.path + '/')) {
+                return fileUri.path.slice(workspaceUri.path.length + 1);
+            }
+        } catch { /* fall through */ }
+        return absUriString;
+    }
+
+    private toAbsoluteUri(key: string): string {
+        if (key.includes('://')) { return key; } // already an absolute URI
+        const folders = vscode.workspace.workspaceFolders;
+        if (!folders || folders.length === 0) { return key; }
+        return vscode.Uri.joinPath(folders[0].uri, key).toString();
+    }
 
     private async persist(): Promise<void> {
         if (!this.storeUri) {
